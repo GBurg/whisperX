@@ -221,6 +221,10 @@ def align(
         segment["clean_wdx"] = clean_wdx
         segment["sentence_spans"] = sentence_spans
     
+
+
+
+    
     aligned_segments: List[SingleAlignedSegment] = []
 
 

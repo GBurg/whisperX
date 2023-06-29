@@ -258,8 +258,8 @@ class FasterWhisperPipeline(Pipeline):
 
         vad_segments = self.vad_model({"waveform": torch.from_numpy(voice).unsqueeze(0), "sample_rate": SAMPLE_RATE})
         vad_segments, original_segments = merge_chunks(vad_segments, 30)
-        for segment in vad_segments:
-            print(f"{round(segment['start'],2)}, {round(segment['end'],2)}")
+        # for segment in vad_segments:
+        #     print(f"{round(segment['start'],2)}, {round(segment['end'],2)}")
 
         # print("AFTER MERGING")
         # Printing the start and end times of each segment.
