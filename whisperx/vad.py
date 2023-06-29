@@ -265,7 +265,9 @@ def merge_chunks(segments, chunk_size):
     Merge operation described in paper
     """
     curr_end = 0
+    vad_end = 0
     merged_segments = []
+    vad_segments = []
     seg_idxs = []
     speaker_idxs = []
 
@@ -274,6 +276,7 @@ def merge_chunks(segments, chunk_size):
     segments = binarize(segments)
     segments_list = []
     for speech_turn in segments.get_timeline():
+        # original_segments.append((speech_turn.start, speech_turn.end)) #pyannote core segment (start and end via .start and .end)
         segments_list.append(SegmentX(speech_turn.start, speech_turn.end, "UNKNOWN"))
 
     if len(segments_list) == 0:
@@ -282,9 +285,16 @@ def merge_chunks(segments, chunk_size):
     # assert segments_list, "segments_list is empty."
     # Make sur the starting point is the start of the segment.
     curr_start = segments_list[0].start
+    vad_start = segments_list[0].start
+    
 
     for seg in segments_list:
-        if seg.end - curr_start > chunk_size and curr_end-curr_start > 0:
+        if (vad_end - vad_start > 0 and seg.start - vad_end > 3):
+            vad_segments.append((vad_start,vad_end))
+            vad_start = seg.start
+        vad_end = seg.end
+
+        if (seg.end - curr_start > chunk_size and curr_end-curr_start > 0): # or seg.start - curr_end > 5: #test with smaller chunks
             merged_segments.append({
                 "start": curr_start,
                 "end": curr_end,
@@ -297,9 +307,11 @@ def merge_chunks(segments, chunk_size):
         seg_idxs.append((seg.start, seg.end))
         speaker_idxs.append(seg.speaker)
     # add final
+    vad_segments.append((vad_start, vad_end))
     merged_segments.append({ 
                 "start": curr_start,
                 "end": curr_end,
                 "segments": seg_idxs,
-            })    
-    return merged_segments
+            })
+    
+    return merged_segments, vad_segments

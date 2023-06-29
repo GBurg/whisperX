@@ -56,6 +56,7 @@ def load_align_model(language_code, device, model_name=None, model_dir=None):
         # use default model
         if language_code in DEFAULT_ALIGN_MODELS_TORCH:
             model_name = DEFAULT_ALIGN_MODELS_TORCH[language_code]
+            # print(model_name)
         elif language_code in DEFAULT_ALIGN_MODELS_HF:
             model_name = DEFAULT_ALIGN_MODELS_HF[language_code]
         else:
@@ -87,6 +88,66 @@ def load_align_model(language_code, device, model_name=None, model_dir=None):
     return align_model, align_metadata
 
 
+def mapOriginalTimestampToVadTimestamp(t1,t2, segmentData):
+    silence = segmentData['silence'] / 1000 # we do stuff in seconds
+    padding = segmentData['padding'] / 1000
+    segments = segmentData['segments']
+    padding0 = padding
+    if segments[0][0] < padding0:
+        padding0 = segments[0][0]
+
+    elapsedTime = 0
+    newT1 = -1
+    newT2 = -1
+
+    for i, segment in enumerate(segments):
+        if t1 <= segment[1] + padding and newT1 == -1:
+            # in this segment lies our time
+            newT1 = elapsedTime + (t1 - segment[0])
+            # now add paddings and silences
+            newT1 += i * silence
+            newT1 += (i * 2 * padding + padding0)
+
+        if t2 <= segment[1] + padding and newT2 == -1:
+            # in this segment lies our time
+            newT2 = elapsedTime + (t2 - segment[0])
+            # now add paddings and silences
+            newT2 += i * silence
+            newT2 += (i* 2 * padding + padding0)
+        
+        elapsedTime += (segment[1] - segment[0])
+
+        if newT1 != -1 and newT2 != -1:
+            return newT1, newT2
+    
+    return newT1, newT2
+
+def mapVadTimestampToOriginalTimestamp(t1,t2, segmentData):
+    silence = segmentData['silence'] / 1000 # we do stuff in seconds
+    padding = segmentData['padding'] / 1000
+    segments = segmentData['segments']
+    padding0 = padding
+    if segments[0][0] < padding0:
+        padding0 = segments[0][0]
+
+    elapsedTime = padding0
+    newT1 = -1
+    newT2 = -1
+
+    for i, segment in enumerate(segments):
+        segmentStart, segmentEnd = mapOriginalTimestampToVadTimestamp(segment[0], segment[1],segmentData)
+
+        if t1 <= segmentEnd + padding and newT1 == -1:
+            newT1 = t1 - segmentStart + segment[0]
+
+        if t2 <= segmentEnd + padding and newT2 == -1:
+            newT2 = t2 - segmentStart + segment[0]
+
+        if newT1 != -1 and newT2 != -1:
+            return newT1, newT2
+    
+    return newT1, newT2
+
 def align(
     transcript: Iterator[SingleSegment],
     model: torch.nn.Module,
@@ -95,6 +156,7 @@ def align(
     device: str,
     interpolate_method: str = "nearest",
     return_char_alignments: bool = False,
+    vad_segmentation_data = None,
 ) -> AlignedTranscriptionResult:
     """
     Align phoneme recognition predictions to known transcription.
@@ -108,6 +170,7 @@ def align(
         audio = audio.unsqueeze(0)
     
     MAX_DURATION = audio.shape[1] / SAMPLE_RATE
+    print (f"audio size: {MAX_DURATION}")
 
     model_dictionary = align_model_metadata["dictionary"]
     model_lang = align_model_metadata["language"]
@@ -160,10 +223,19 @@ def align(
     
     aligned_segments: List[SingleAlignedSegment] = []
 
+
+    
+
+
     # 2. Get prediction matrix from alignment model & align
     for sdx, segment in enumerate(transcript):
         t1 = segment["start"]
         t2 = segment["end"]
+        if vad_segmentation_data != None:
+            print(t1, t2)
+            t1, t2 = mapOriginalTimestampToVadTimestamp(t1, t2, vad_segmentation_data)
+            print(t1, t2)
+        
         text = segment["text"]
 
         aligned_seg: SingleAlignedSegment = {
@@ -222,7 +294,7 @@ def align(
 
         char_segments = merge_repeats(path, text_clean)
 
-        duration = t2 -t1
+        duration = t2 - t1
         ratio = duration * waveform_segment.size(0) / (trellis.size(0) - 1)
 
         # assign timestamps to aligned characters
@@ -318,9 +390,13 @@ def align(
         aligned_subsegments = aligned_subsegments.to_dict('records')
         aligned_segments += aligned_subsegments
 
-    # create word_segments list
+    # create word_segments list AND revert from vad timestamps to our world
     word_segments: List[SingleWordSegment] = []
     for segment in aligned_segments:
+        if vad_segmentation_data != None:
+            segment["start"], segment["end"] = mapVadTimestampToOriginalTimestamp(segment["start"], segment["end"],vad_segmentation_data)
+            for word in segment["words"]:
+                word["start"], word["end"] = mapVadTimestampToOriginalTimestamp(word["start"], word["end"],vad_segmentation_data)
         word_segments += segment["words"]
 
     return {"segments": aligned_segments, "word_segments": word_segments}

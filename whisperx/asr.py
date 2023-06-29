@@ -244,7 +244,7 @@ class FasterWhisperPipeline(Pipeline):
         return final_iterator
 
     def transcribe(
-        self, audio: Union[str, np.ndarray], batch_size=None, num_workers=0, language=None, task=None
+        self, audio: Union[str, np.ndarray], voice: Union[str, np.ndarray], batch_size=None, num_workers=0, language=None, task=None
     ) -> TranscriptionResult:
         if isinstance(audio, str):
             audio = load_audio(audio)
@@ -256,8 +256,15 @@ class FasterWhisperPipeline(Pipeline):
                 # print(f2-f1)
                 yield {'inputs': audio[f1:f2]}
 
-        vad_segments = self.vad_model({"waveform": torch.from_numpy(audio).unsqueeze(0), "sample_rate": SAMPLE_RATE})
-        vad_segments = merge_chunks(vad_segments, 30)
+        vad_segments = self.vad_model({"waveform": torch.from_numpy(voice).unsqueeze(0), "sample_rate": SAMPLE_RATE})
+        vad_segments, original_segments = merge_chunks(vad_segments, 30)
+        for segment in vad_segments:
+            print(f"{round(segment['start'],2)}, {round(segment['end'],2)}")
+
+        # print("AFTER MERGING")
+        # Printing the start and end times of each segment.
+        # for segment in vad_segments:
+        #     print(f"Start: {segment['start']}, End: {segment['end']}, Segment: {segment}")
         if self.tokenizer is None:
             language = language or self.detect_language(audio)
             task = task or "transcribe"
@@ -274,7 +281,9 @@ class FasterWhisperPipeline(Pipeline):
 
         segments: List[SingleSegment] = []
         batch_size = batch_size or self._batch_size
+        import json
         for idx, out in enumerate(self.__call__(data(audio, vad_segments), batch_size=batch_size, num_workers=num_workers)):
+            #print(json.dumps(out))
             text = out['text']
             if batch_size in [0, 1, None]:
                 text = text[0]
@@ -286,10 +295,10 @@ class FasterWhisperPipeline(Pipeline):
                 }
             )
 
-        return {"segments": segments, "language": language}
+        return {"segments": segments, "language": language, "original_vad_segments" : original_segments}
 
 
-    def detect_language(self, audio: np.ndarray):
+    def detect_language(self, audio: np.ndarray, returnProb = False):
         if audio.shape[0] < N_SAMPLES:
             print("Warning: audio is shorter than 30s, language detection may be inaccurate.")
         segment = log_mel_spectrogram(audio[: N_SAMPLES],
@@ -299,4 +308,6 @@ class FasterWhisperPipeline(Pipeline):
         language_token, language_probability = results[0][0]
         language = language_token[2:-2]
         print(f"Detected language: {language} ({language_probability:.2f}) in first 30s of audio...")
+        if returnProb:
+            return language, language_probability
         return language
