@@ -281,7 +281,7 @@ def merge_chunks(segments, chunk_size):
 
     if len(segments_list) == 0:
         print("No active speech found in audio")
-        return []
+        return [], []
     # assert segments_list, "segments_list is empty."
     # Make sur the starting point is the start of the segment.
     curr_start = segments_list[0].start
