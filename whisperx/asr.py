@@ -92,6 +92,8 @@ def load_model(whisper_arch,
         default_asr_options["suppress_tokens"] = list(set(default_asr_options["suppress_tokens"]))
     del default_asr_options["suppress_numerals"]
 
+    # print(default_asr_options)
+
     default_asr_options = faster_whisper.transcribe.TranscriptionOptions(**default_asr_options)
 
     default_vad_options = {
@@ -211,6 +213,7 @@ class FasterWhisperPipeline(Pipeline):
         self.vad_model = vad
 
     def _sanitize_parameters(self, **kwargs):
+        # print("wx: _sanitize_parameters",kwargs)
         preprocess_kwargs = {}
         if "tokenizer" in kwargs:
             preprocess_kwargs["maybe_arg"] = kwargs["maybe_arg"]
@@ -281,9 +284,10 @@ class FasterWhisperPipeline(Pipeline):
 
         segments: List[SingleSegment] = []
         batch_size = batch_size or self._batch_size
-        import json
+        
+        # import json
         for idx, out in enumerate(self.__call__(data(audio, vad_segments), batch_size=batch_size, num_workers=num_workers)):
-            #print(json.dumps(out))
+            # print(json.dumps(out))
             text = out['text']
             if batch_size in [0, 1, None]:
                 text = text[0]
